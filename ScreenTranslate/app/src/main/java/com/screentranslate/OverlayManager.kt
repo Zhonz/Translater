@@ -10,12 +10,17 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import com.screentranslate.model.TextBlock
+import kotlin.math.abs
+import kotlin.math.cos
 
 /**
  * 翻译结果覆盖层管理器。
  *
  * 使用 WindowManager 在屏幕上原文字的相同位置、相近字号处显示翻译后的中文，
  * 并用不透明背景遮挡原文字，实现"替换屏幕文字"的效果。
+ *
+ * 对倾斜文字，根据旋转角度校正字号估算（AABB 高度包含旋转分量），
+ * 并以边界框中心为支点旋转覆盖层，与原文倾斜方向一致。
  */
 class OverlayManager(private val context: Context) {
 
@@ -33,29 +38,46 @@ class OverlayManager(private val context: Context) {
      */
     fun showTranslations(blocks: List<TextBlock>, translations: List<String>) {
         clear()
+        var added = 0
         for (i in blocks.indices) {
+            if (added >= MAX_OVERLAY_VIEWS) break
             val block = blocks[i]
             val translated = translations.getOrNull(i)?.takeIf { it.isNotBlank() } ?: continue
-            addOverlayText(block, translated)
+            if (addOverlayText(block, translated)) {
+                added++
+            }
         }
     }
 
     /**
      * 为单个文字块添加覆盖 TextView。
+     * @return 是否成功添加
      */
-    private fun addOverlayText(block: TextBlock, translated: String) {
+    private fun addOverlayText(block: TextBlock, translated: String): Boolean {
         val box = block.boundingBox
-        if (box.width() <= 0 || box.height() <= 0) return
+        if (box.width() <= 0 || box.height() <= 0) return false
+
+        val isRotated = abs(block.angle) > 1.5f
+        val pad = if (isRotated) 4 else 2
+
+        // 倾斜文字的 AABB 高度 = 实际文字高度 * |cos(θ)| + 文字宽度 * |sin(θ)|。
+        // 这里只按高度分量反推，避免字号过大；对近垂直文字设下限防止字号过小。
+        val actualHeight = if (isRotated) {
+            val cosAngle = abs(cos(Math.toRadians(block.angle.toDouble()))).coerceIn(0.3, 1.0)
+            (box.height() * cosAngle).toInt()
+        } else {
+            box.height()
+        }
 
         val textView = TextView(context).apply {
             text = translated
             setTextColor(0xFF111827.toInt())
             // 用不透明背景遮挡原文字
             setBackgroundColor(0xFFFFFFFF.toInt())
-            gravity = Gravity.CENTER_VERTICAL or Gravity.START
-            setPadding(2, 0, 2, 0)
-            // 根据原文字高度估算字号（px 单位）。0.85 系数用于匹配实际字号与行高。
-            val fontSizePx = (block.textHeight * 0.85f).coerceIn(8f, 80f)
+            gravity = Gravity.CENTER
+            setPadding(pad, 0, pad, 0)
+            // 根据原文字高度估算字号（px 单位），倾斜文字用校正后的高度。
+            val fontSizePx = (actualHeight * 0.85f).coerceIn(8f, 80f)
             setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSizePx)
             typeface = Typeface.DEFAULT
             maxLines = 1
@@ -65,9 +87,12 @@ class OverlayManager(private val context: Context) {
             rotation = -block.angle
         }
 
+        // 覆盖层尺寸：倾斜时适当放大以确保遮挡
+        val w = box.width() + pad * 2
+        val h = box.height() + pad
+
         val params = WindowManager.LayoutParams(
-            box.width(),
-            box.height(),
+            w, h,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -79,15 +104,18 @@ class OverlayManager(private val context: Context) {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = box.left
-            y = box.top
+            // 定位到原文字区域，偏移 pad 以居中
+            x = box.left - pad
+            y = box.top - pad / 2
         }
 
-        try {
+        return try {
             windowManager.addView(textView, params)
             overlayViews.add(textView)
+            true
         } catch (e: Exception) {
             e.printStackTrace()
+            false
         }
     }
 
@@ -109,4 +137,9 @@ class OverlayManager(private val context: Context) {
      * 当前是否有覆盖层显示。
      */
     fun hasOverlays(): Boolean = overlayViews.isNotEmpty()
+
+    companion object {
+        /** 单次最多添加的覆盖视图数量，避免大量 TextView 导致卡顿 */
+        private const val MAX_OVERLAY_VIEWS = 100
+    }
 }
