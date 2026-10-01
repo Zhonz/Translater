@@ -119,6 +119,18 @@ class FloatingWindowService : Service() {
         startForegroundWithNotification()
         showFloatingButton()
         prefsManager.setServiceRunning(true)
+
+        // 监听系统主动停止投屏（用户撤销授权、系统回收等）
+        captureManager.onProjectionStopped = {
+            isContinuousMode = false
+            continuousJob?.cancel()
+            continuousJob = null
+            overlayManager.clear()
+            updateContinuousModeUI()
+            serviceScope.launch {
+                showToast("屏幕共享已停止，请重新授权")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -299,6 +311,16 @@ class FloatingWindowService : Service() {
         val view = LayoutInflater.from(this).inflate(R.layout.floating_menu, null)
         val menuRoot = view.findViewById<LinearLayout>(R.id.menuRoot)
 
+        // 持续翻译状态：根据当前模式显示"已开启"
+        val continuousBtn = view.findViewById<android.widget.TextView>(R.id.btnModeContinuous)
+        if (isContinuousMode) {
+            continuousBtn.text = getString(R.string.mode_continuous_on)
+            continuousBtn.setTextColor(getColor(R.color.accent))
+        } else {
+            continuousBtn.text = getString(R.string.mode_continuous)
+            continuousBtn.setTextColor(getColor(R.color.text_primary))
+        }
+
         // 菜单项点击
         view.findViewById<View>(R.id.btnModeSingle).setOnClickListener {
             removeMenu()
@@ -386,7 +408,8 @@ class FloatingWindowService : Service() {
             return
         }
 
-        val bitmap = captureManager.capture()
+        // 持续翻译模式下保持 VirtualDisplay 活跃，单次翻译截屏后释放
+        val bitmap = captureManager.capture(keepAlive = isContinuousMode)
         if (bitmap == null) {
             // 截屏失败（瞬时），不清除已有覆盖层，避免屏幕闪烁空白
             showToast("截屏失败")
@@ -479,6 +502,8 @@ class FloatingWindowService : Service() {
             continuousJob?.cancel()
             continuousJob = null
             overlayManager.clear()
+            // 释放 VirtualDisplay，停止屏幕共享指示器
+            captureManager.releaseDisplay()
             updateContinuousModeUI()
             Toast.makeText(this, R.string.continuous_off, Toast.LENGTH_SHORT).show()
         } else {

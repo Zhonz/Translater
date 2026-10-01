@@ -27,6 +27,7 @@
     <!-- 悬浮菜单 -->
     <string name="mode_single">单次翻译</string>
     <string name="mode_continuous">持续翻译</string>
+    <string name="mode_continuous_on">持续翻译（已开启）</string>
     <string name="mode_settings">设置</string>
     <string name="mode_close">关闭</string>
     <string name="translating">翻译中…</string>

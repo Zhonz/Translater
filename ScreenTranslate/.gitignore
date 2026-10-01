@@ -1,0 +1,4 @@
+release.keystore
+*.apk
+aligned.apk
+local.properties
