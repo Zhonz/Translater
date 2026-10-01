@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
 
     // ==================== 模型检测 ====================
 
-    /** 调用服务商 /models 接口获取可用模型列表，填充到模型下拉框 */
+    /** 调用服务商 /models 接口获取可用模型列表，弹出选择对话框 */
     private fun detectModels() {
         val apiUrl = etApiUrl.text?.toString()?.trim() ?: ""
         val apiKey = etApiKey.text?.toString()?.trim() ?: ""
@@ -220,19 +220,30 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
 
-            // 填充下拉列表：先清空当前文本，避免 AutoCompleteTextView 按文本过滤导致看不到全部模型
+            // 同步填充 AutoCompleteTextView 的候选列表（供手动输入时联想）
+            val sortedModels = models.sorted()
             modelAdapter.clear()
-            modelAdapter.addAll(models.sorted())
+            modelAdapter.addAll(sortedModels)
             modelAdapter.notifyDataSetChanged()
-            etModel.setText("", false)
-            etModel.requestFocus()
-            etModel.showDropDown()
-            Toast.makeText(
-                this@MainActivity,
-                "已获取 ${models.size} 个可用模型，请选择",
-                Toast.LENGTH_SHORT
-            ).show()
+
+            // 弹出选择对话框，保证用户一定能看到所有模型
+            showModelPickerDialog(sortedModels)
         }
+    }
+
+    /** 以列表对话框形式展示可用模型，点击后填入模型输入框 */
+    private fun showModelPickerDialog(models: List<String>) {
+        val items = models.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("选择模型（共 ${models.size} 个）")
+            .setItems(items) { _, which ->
+                val selected = items[which]
+                etModel.setText(selected, false)
+                etModel.setSelection(etModel.text?.length ?: 0)
+                Toast.makeText(this, "已选择：$selected", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     // ==================== 权限 ====================
