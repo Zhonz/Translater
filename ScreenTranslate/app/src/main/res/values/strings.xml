@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">屏幕翻译</string>
+
+    <!-- 主界面 -->
+    <string name="title_main">屏幕翻译</string>
+    <string name="btn_start_service">启动悬浮窗</string>
+    <string name="btn_stop_service">关闭悬浮窗</string>
+    <string name="btn_request_overlay">申请悬浮窗权限</string>
+    <string name="btn_request_capture">申请截屏权限</string>
+    <string name="status_overlay">悬浮窗权限：</string>
+    <string name="status_capture">截屏权限：</string>
+    <string name="status_granted">已授权</string>
+    <string name="status_denied">未授权</string>
+    <string name="service_running">服务运行中</string>
+    <string name="service_stopped">服务未运行</string>
+
+    <!-- AI 配置 -->
+    <string name="title_ai_config">AI 服务商配置</string>
+    <string name="hint_api_url">API 地址 (如 https://api.openai.com/v1/chat/completions)</string>
+    <string name="hint_api_key">API Key</string>
+    <string name="hint_model">模型名称 (如 gpt-4o-mini)</string>
+    <string name="hint_prompt">系统提示词</string>
+    <string name="default_prompt">你是一个专业的翻译助手。请将用户提供的文本翻译成简体中文，只输出翻译结果，不要添加任何解释。如果原文已经是中文，则原样输出。</string>
+    <string name="btn_save_config">保存配置</string>
+
+    <!-- 悬浮菜单 -->
+    <string name="mode_single">单次翻译</string>
+    <string name="mode_continuous">持续翻译</string>
+    <string name="mode_settings">设置</string>
+    <string name="mode_close">关闭</string>
+    <string name="translating">翻译中…</string>
+    <string name="translate_done">翻译完成</string>
+    <string name="continuous_on">持续翻译已开启</string>
+    <string name="continuous_off">持续翻译已关闭</string>
+
+    <!-- 通知 -->
+    <string name="notif_channel_name">屏幕翻译服务</string>
+    <string name="notif_title">屏幕翻译</string>
+    <string name="notif_text">悬浮翻译服务运行中</string>
+</resources>
