@@ -45,6 +45,8 @@ dependencies {
     // ML Kit Text Recognition (on-device OCR)
     implementation("com.google.mlkit:text-recognition:16.0.0")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.0")
+    implementation("com.google.mlkit:text-recognition-japanese:16.0.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")

@@ -31,6 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 悬浮窗服务。
@@ -129,6 +130,8 @@ class FloatingWindowService : Service() {
         removeFloatingButton()
         removeMenu()
         captureManager.release()
+        ocrManager.close()
+        translationManager.close()
         serviceScope.cancel()
     }
 
@@ -349,24 +352,32 @@ class FloatingWindowService : Service() {
 
     /**
      * 核心翻译流程（挂起函数，供单次/持续模式复用）。
+     *
+     * 重计算工作（截屏、OCR、术语匹配、AI 翻译）在 [Dispatchers.Default] 上执行，
+     * Toast 提示切回 [Dispatchers.Main]，避免阻塞主线程。
      */
     private suspend fun translateOnceSuspend() {
         if (!captureManager.isReady) {
-            Toast.makeText(this, "截屏权限未就绪，请重新启动服务", Toast.LENGTH_SHORT).show()
+            showToast("截屏权限未就绪，请重新启动服务")
             return
         }
 
         val bitmap = captureManager.capture()
         if (bitmap == null) {
-            Toast.makeText(this, "截屏失败", Toast.LENGTH_SHORT).show()
+            showToast("截屏失败")
             return
         }
 
         val blocks: List<TextBlock> = try {
-            ocrManager.recognize(bitmap)
+            withContext(Dispatchers.Default) {
+                ocrManager.recognize(bitmap)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
+        } finally {
+            // OCR 完成后立即回收截屏，释放内存
+            bitmap.recycle()
         }
 
         if (blocks.isEmpty()) {
@@ -409,6 +420,13 @@ class FloatingWindowService : Service() {
         overlayManager.showTranslations(blocks, results)
     }
 
+    /** 在主线程显示 Toast */
+    private suspend fun showToast(msg: String) {
+        withContext(Dispatchers.Main) {
+            Toast.makeText(this@FloatingWindowService, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun doSingleTranslate() {
         Toast.makeText(this, R.string.translating, Toast.LENGTH_SHORT).show()
         runTranslateOnce {
@@ -432,7 +450,13 @@ class FloatingWindowService : Service() {
     private fun startContinuousLoop() {
         serviceScope.launch {
             while (isContinuousMode) {
-                translateOnceSuspend()
+                try {
+                    translateOnceSuspend()
+                } catch (e: Exception) {
+                    // 单次翻译异常不应中断持续翻译循环
+                    e.printStackTrace()
+                }
+                if (!isContinuousMode) break
                 // 等待间隔
                 val endTime = System.currentTimeMillis() + CONTINUOUS_INTERVAL_MS
                 while (isContinuousMode && System.currentTimeMillis() < endTime) {

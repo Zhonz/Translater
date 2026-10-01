@@ -1,6 +1,5 @@
 package com.screentranslate
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -13,6 +12,9 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.util.DisplayMetrics
 import android.view.WindowManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 
 /**
@@ -22,6 +24,8 @@ import java.nio.ByteBuffer
  * 1. 在 Activity 中通过 [MediaProjectionManager.createScreenCaptureIntent] 发起授权。
  * 2. 在 onActivityResult 中拿到 resultCode 与 data，调用 [setUp]。
  * 3. 调用 [capture] 获取当前屏幕 Bitmap。
+ *
+ * [capture] 为挂起函数，内部在 [Dispatchers.IO] 上执行，不会阻塞调用线程。
  */
 class ScreenCaptureManager(private val context: Context) {
 
@@ -69,14 +73,23 @@ class ScreenCaptureManager(private val context: Context) {
 
     /**
      * 捕获当前屏幕，返回 Bitmap（可能为 null）。
+     * 若首帧未就绪，会短暂重试最多 [MAX_RETRIES] 次。
+     *
+     * 挂起函数：在 IO 线程执行阻塞操作，使用 [delay] 替代 Thread.sleep 避免阻塞主线程。
      */
-    fun capture(): Bitmap? {
-        val reader = imageReader ?: return null
-        // 取最新的一帧
+    suspend fun capture(): Bitmap? = withContext(Dispatchers.IO) {
+        val reader = imageReader ?: return@withContext null
         var image: Image? = null
+        var attempt = 0
         try {
-            image = reader.acquireLatestImage()
-            if (image == null) return null
+            // 首帧可能未就绪，重试几次（使用 delay 不阻塞线程）
+            while (attempt < MAX_RETRIES) {
+                image = reader.acquireLatestImage()
+                if (image != null) break
+                attempt++
+                delay(RETRY_INTERVAL_MS)
+            }
+            if (image == null) return@withContext null
 
             val planes = image.planes
             val buffer: ByteBuffer = planes[0].buffer
@@ -84,22 +97,30 @@ class ScreenCaptureManager(private val context: Context) {
             val rowStride = planes[0].rowStride
             val rowPadding = rowStride - pixelStride * screenWidth
 
+            val bitmapWidth = screenWidth + rowPadding / pixelStride
             val bitmap = Bitmap.createBitmap(
-                screenWidth + rowPadding / pixelStride,
+                bitmapWidth,
                 screenHeight,
                 Bitmap.Config.ARGB_8888
             )
-            bitmap.copyPixelsFromBuffer(buffer)
+            try {
+                bitmap.copyPixelsFromBuffer(buffer)
+            } catch (e: Exception) {
+                bitmap.recycle()
+                return@withContext null
+            }
 
             // 如果有行填充，裁剪掉
-            return if (rowPadding != 0) {
-                Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+            if (rowPadding != 0) {
+                val cropped = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+                if (cropped != bitmap) bitmap.recycle()
+                cropped
             } else {
                 bitmap
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            return null
+            null
         } finally {
             image?.close()
         }
@@ -113,5 +134,12 @@ class ScreenCaptureManager(private val context: Context) {
         imageReader = null
         mediaProjection?.stop()
         mediaProjection = null
+    }
+
+    companion object {
+        /** 截屏最大重试次数 */
+        private const val MAX_RETRIES = 5
+        /** 每次重试间隔（毫秒） */
+        private const val RETRY_INTERVAL_MS = 50L
     }
 }
