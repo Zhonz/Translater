@@ -198,12 +198,17 @@ class MainActivity : AppCompatActivity() {
             prompt = etPrompt.text?.toString()?.takeIf { it.isNotBlank() }
                 ?: AppConfig.DEFAULT_PROMPT
         )
-        if (config.apiUrl.isBlank() || config.model.isBlank()) {
-            Toast.makeText(this, "API 地址和模型名称不能为空", Toast.LENGTH_SHORT).show()
+        // 统一校验
+        PrefsManager.validateConfig(config)?.let { error ->
+            Toast.makeText(this, error, Toast.LENGTH_LONG).show()
             return
         }
-        prefsManager.saveConfig(config)
-        Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show()
+        val saved = prefsManager.saveConfig(config)
+        if (saved) {
+            Toast.makeText(this, "配置已保存（API Key 已加密存储）", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "保存失败：API Key 写入异常，请重试", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun setupPmTermsSwitch() {

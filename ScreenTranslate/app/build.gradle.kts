@@ -71,6 +71,9 @@ dependencies {
     // JSON
     implementation("org.json:json:20231013")
 
+    // 加密存储（API Key 等敏感信息）
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     // 单元测试
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
