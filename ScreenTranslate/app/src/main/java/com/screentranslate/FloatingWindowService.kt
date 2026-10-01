@@ -71,16 +71,21 @@ class FloatingWindowService : Service() {
         /** 持续翻译间隔（毫秒） */
         private const val CONTINUOUS_INTERVAL_MS = 3000L
 
-        /** MediaProjection 授权结果暂存（由 MainActivity 设置） */
-        @JvmStatic
-        var pendingResultCode: Int = 0
-        @JvmStatic
-        var pendingData: Intent? = null
+        private const val EXTRA_RESULT_CODE = "extra_result_code"
+        private const val EXTRA_RESULT_DATA = "extra_result_data"
 
+        /** 匹配任意 CJK 汉字（含扩展区、繁体） */
+        private val HAN_REGEX = Regex("\\p{IsHan}")
+
+        /**
+         * 启动悬浮窗服务，并通过 Intent 携带 MediaProjection 授权结果。
+         * 不使用静态变量暂存，避免进程被系统回收后数据丢失导致服务不可恢复。
+         */
         fun start(context: Context, resultCode: Int, data: Intent) {
-            pendingResultCode = resultCode
-            pendingData = data
-            val intent = Intent(context, FloatingWindowService::class.java)
+            val intent = Intent(context, FloatingWindowService::class.java).apply {
+                putExtra(EXTRA_RESULT_CODE, resultCode)
+                putExtra(EXTRA_RESULT_DATA, data)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -113,18 +118,34 @@ class FloatingWindowService : Service() {
 
         startForegroundWithNotification()
         showFloatingButton()
+        prefsManager.setServiceRunning(true)
+    }
 
-        // 初始化屏幕捕获
-        val data = pendingData
-        if (data != null && pendingResultCode != 0) {
-            captureManager.setUp(pendingResultCode, data)
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 在 onStartCommand 中尽快完成 MediaProjection 初始化，
+        // 授权数据随 Intent 传递，进程被杀后需由 Activity 重新发起授权。
+        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
+        val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra(EXTRA_RESULT_DATA)
         }
+        if (resultCode != 0 && data != null && !captureManager.isReady) {
+            try {
+                captureManager.setUp(resultCode, data)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
         isContinuousMode = false
         continuousJob?.cancel()
+        prefsManager.setServiceRunning(false)
         handler.removeCallbacksAndMessages(null)
         overlayManager.clear()
         removeFloatingButton()
@@ -246,7 +267,10 @@ class FloatingWindowService : Service() {
             windowManager.addView(view, params)
             floatingButton = view
         } catch (e: Exception) {
+            // 悬浮窗添加失败（如权限被回收），提示用户并停止服务，避免空转
             e.printStackTrace()
+            Toast.makeText(this, "悬浮窗权限不可用，服务已停止", Toast.LENGTH_LONG).show()
+            stopSelf()
         }
     }
 
@@ -406,10 +430,19 @@ class FloatingWindowService : Service() {
         }
         val translatedList = translationManager.translate(srcTexts, config, termContext)
 
-        // 组装结果：已中文的保留原文，其余用翻译结果
+        // 翻译失败（如 API Key 无效）时向用户提示原因
+        translationManager.lastError?.let { err ->
+            showToast(err)
+        }
+
+        // 组装结果：
+        // - 已中文的保留原文
+        // - 翻译成功的用译文
+        // - 翻译失败/返回空的回退显示原文，避免出现空白覆盖框
         val results = MutableList(blocks.size) { "" }
         for (i in indices.indices) {
-            results[indices[i]] = translatedList.getOrNull(i) ?: ""
+            val translated = translatedList.getOrNull(i) ?: ""
+            results[indices[i]] = translated.ifBlank { blocks[indices[i]].text }
         }
         for (i in blocks.indices) {
             if (results[i].isBlank() && containsChinese(blocks[i].text)) {
@@ -448,7 +481,8 @@ class FloatingWindowService : Service() {
     }
 
     private fun startContinuousLoop() {
-        serviceScope.launch {
+        // 保存 Job 句柄，确保停止时能及时 cancel
+        continuousJob = serviceScope.launch {
             while (isContinuousMode) {
                 try {
                     translateOnceSuspend()
@@ -473,11 +507,8 @@ class FloatingWindowService : Service() {
         startActivity(intent)
     }
 
-    /** 判断文本是否包含中文字符 */
+    /** 判断文本是否包含汉字（含 CJK 统一表意文字扩展区与繁体） */
     private fun containsChinese(text: String): Boolean {
-        for (ch in text) {
-            if (ch.code in 0x4E00..0x9FFF) return true
-        }
-        return false
+        return HAN_REGEX.containsMatchIn(text)
     }
 }

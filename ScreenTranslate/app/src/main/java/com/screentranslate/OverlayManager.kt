@@ -27,6 +27,16 @@ class OverlayManager(private val context: Context) {
     private val windowManager: WindowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
+    /** 屏幕尺寸，用于覆盖层边界裁剪修正 */
+    private val screenWidth: Int
+    private val screenHeight: Int
+
+    init {
+        val metrics = context.resources.displayMetrics
+        screenWidth = metrics.widthPixels
+        screenHeight = metrics.heightPixels
+    }
+
     /** 当前已添加到屏幕上的覆盖 TextView 列表 */
     private val overlayViews = mutableListOf<View>()
 
@@ -105,8 +115,8 @@ class OverlayManager(private val context: Context) {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             // 定位到原文字区域，偏移 pad 以居中
-            x = box.left - pad
-            y = box.top - pad / 2
+            x = (box.left - pad).coerceIn(0, (screenWidth - w).coerceAtLeast(0))
+            y = (box.top - pad / 2).coerceIn(0, (screenHeight - h).coerceAtLeast(0))
         }
 
         return try {

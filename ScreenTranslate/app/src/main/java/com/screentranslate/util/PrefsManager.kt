@@ -41,11 +41,19 @@ class PrefsManager(context: Context) {
         prefs.edit().putBoolean(KEY_USE_PM_TERMS, enabled).apply()
     }
 
+    /** 悬浮窗服务是否正在运行（由服务在 onCreate/onDestroy 时维护） */
+    fun isServiceRunning(): Boolean = prefs.getBoolean(KEY_SERVICE_RUNNING, false)
+
+    fun setServiceRunning(running: Boolean) {
+        prefs.edit().putBoolean(KEY_SERVICE_RUNNING, running).apply()
+    }
+
     companion object {
         private const val KEY_API_URL = "api_url"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_MODEL = "model"
         private const val KEY_PROMPT = "prompt"
         private const val KEY_USE_PM_TERMS = "use_pm_terms"
+        private const val KEY_SERVICE_RUNNING = "service_running"
     }
 }

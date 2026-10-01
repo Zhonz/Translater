@@ -95,7 +95,15 @@ class ScreenCaptureManager(private val context: Context) {
             val buffer: ByteBuffer = planes[0].buffer
             val pixelStride = planes[0].pixelStride
             val rowStride = planes[0].rowStride
+
+            // 防御：pixelStride 为 0 会导致除零；rowPadding 为负说明 stride 异常
+            if (pixelStride <= 0) {
+                return@withContext null
+            }
             val rowPadding = rowStride - pixelStride * screenWidth
+            if (rowPadding < 0) {
+                return@withContext null
+            }
 
             val bitmapWidth = screenWidth + rowPadding / pixelStride
             val bitmap = Bitmap.createBitmap(
@@ -104,6 +112,8 @@ class ScreenCaptureManager(private val context: Context) {
                 Bitmap.Config.ARGB_8888
             )
             try {
+                // 显式重置 buffer 位置，确保 copyPixelsFromBuffer 从头读取
+                buffer.rewind()
                 bitmap.copyPixelsFromBuffer(buffer)
             } catch (e: Exception) {
                 bitmap.recycle()
