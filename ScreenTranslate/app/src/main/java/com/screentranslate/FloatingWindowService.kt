@@ -388,6 +388,7 @@ class FloatingWindowService : Service() {
 
         val bitmap = captureManager.capture()
         if (bitmap == null) {
+            // 截屏失败（瞬时），不清除已有覆盖层，避免屏幕闪烁空白
             showToast("截屏失败")
             return
         }
@@ -405,7 +406,12 @@ class FloatingWindowService : Service() {
         }
 
         if (blocks.isEmpty()) {
-            overlayManager.clear()
+            // OCR 未识别到文字：
+            // - 持续模式下保留上一次的覆盖层（避免频繁清空导致用户看不到翻译）
+            // - 单次模式下清除覆盖层
+            if (!isContinuousMode) {
+                overlayManager.clear()
+            }
             return
         }
 
@@ -471,13 +477,59 @@ class FloatingWindowService : Service() {
         if (isContinuousMode) {
             isContinuousMode = false
             continuousJob?.cancel()
+            continuousJob = null
             overlayManager.clear()
+            updateContinuousModeUI()
             Toast.makeText(this, R.string.continuous_off, Toast.LENGTH_SHORT).show()
         } else {
+            if (!captureManager.isReady) {
+                Toast.makeText(this, "截屏权限未就绪，请重新启动服务", Toast.LENGTH_SHORT).show()
+                return
+            }
             isContinuousMode = true
+            updateContinuousModeUI()
             Toast.makeText(this, R.string.continuous_on, Toast.LENGTH_SHORT).show()
             startContinuousLoop()
         }
+    }
+
+    /**
+     * 更新持续翻译状态的视觉指示：
+     * 1. 悬浮按钮背景色变为强调色（粉色），表示持续翻译进行中
+     * 2. 通知文本更新为"持续翻译进行中"
+     */
+    private fun updateContinuousModeUI() {
+        // 更新悬浮按钮背景色
+        val btn = floatingButton?.findViewById<ImageView>(R.id.ivFloatingButton)
+        if (btn != null) {
+            val targetColor = if (isContinuousMode) getColor(R.color.accent) else getColor(R.color.floating_bg)
+            btn.background?.setTint(targetColor)
+        }
+        // 更新通知
+        updateNotification()
+    }
+
+    /** 更新前台服务通知文本，反映当前翻译模式 */
+    private fun updateNotification() {
+        val text = if (isContinuousMode) {
+            getString(R.string.notif_text_continuous)
+        } else {
+            getString(R.string.notif_text)
+        }
+        val openIntent = Intent(this, MainActivity::class.java)
+        val pi = PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(getString(R.string.notif_title))
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_translate)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .build()
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(NOTIFICATION_ID, notification)
     }
 
     private fun startContinuousLoop() {

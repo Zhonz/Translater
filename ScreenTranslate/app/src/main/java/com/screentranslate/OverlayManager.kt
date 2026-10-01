@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.os.Build
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -57,6 +58,7 @@ class OverlayManager(private val context: Context) {
                 added++
             }
         }
+        Log.d(TAG, "显示 $added/${blocks.size} 个翻译覆盖层")
     }
 
     /**
@@ -82,8 +84,12 @@ class OverlayManager(private val context: Context) {
         val textView = TextView(context).apply {
             text = translated
             setTextColor(0xFF111827.toInt())
-            // 用不透明背景遮挡原文字
+            // 用不透明背景遮挡原文字，加细边框便于用户识别覆盖区域
             setBackgroundColor(0xFFFFFFFF.toInt())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFFFFFFF.toInt())
+                setStroke(1, 0xFFE5E7EB.toInt())
+            }
             gravity = Gravity.CENTER
             setPadding(pad, 0, pad, 0)
             // 根据原文字高度估算字号（px 单位），倾斜文字用校正后的高度。
@@ -155,6 +161,7 @@ class OverlayManager(private val context: Context) {
     fun hasOverlays(): Boolean = overlayViews.isNotEmpty()
 
     companion object {
+        private const val TAG = "OverlayManager"
         /** 单次最多添加的覆盖视图数量，避免大量 TextView 导致卡顿 */
         private const val MAX_OVERLAY_VIEWS = 100
     }

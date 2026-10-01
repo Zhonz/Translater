@@ -33,6 +33,7 @@
     <string name="translate_done">翻译完成</string>
     <string name="continuous_on">持续翻译已开启</string>
     <string name="continuous_off">持续翻译已关闭</string>
+    <string name="notif_text_continuous">持续翻译进行中…</string>
 
     <!-- 通知 -->
     <string name="notif_channel_name">屏幕翻译服务</string>
