@@ -30,6 +30,15 @@ class TranslationManager {
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
+    /**
+     * 最近一次翻译失败的用户可读错误信息（如 API Key 无效、额度不足）。
+     * 调用方可在 translate 返回空列表时读取此值向用户提示。
+     * 成功翻译或瞬时错误（会重试）时为 null。
+     */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     companion object {
         /** AI 可能用来包装数组的字段名 */
         private val arrayKeys = arrayOf("translations", "result", "results", "data", "output", "texts")
@@ -54,7 +63,9 @@ class TranslationManager {
         termContext: String = ""
     ): List<String> =
         withContext(Dispatchers.IO) {
+            lastError = null
             if (texts.isEmpty() || config.apiKey.isBlank()) {
+                lastError = "API Key 未配置"
                 return@withContext emptyList()
             }
 
@@ -126,7 +137,19 @@ class TranslationManager {
                     return null
                 }
                 if (!response.isSuccessful) {
-                    // 4xx 客户端错误（如 401 key 无效）不重试
+                    // 4xx 客户端错误（如 401 key 无效、429 限流）不重试，记录用户可读错误
+                    val errorBody = try { response.body?.string() ?: "" } catch (_: Exception) { "" }
+                    lastError = when (response.code) {
+                        401 -> "API Key 无效或未授权，请检查配置"
+                        403 -> "API Key 无权限访问该模型"
+                        429 -> "请求过于频繁或额度已用尽，请稍后再试"
+                        else -> "翻译服务返回错误 ${response.code}"
+                    }
+                    // 记录诊断日志（不含 API Key）
+                    android.util.Log.w(
+                        "TranslationManager",
+                        "HTTP ${response.code}: ${errorBody.take(200)}"
+                    )
                     return emptyList()
                 }
                 val body = response.body?.string() ?: return emptyList()
@@ -161,18 +184,16 @@ class TranslationManager {
         }
     }
 
+    /** 用于剥离 ```...``` 代码块（含语言标签）的正则，支持跨行 */
+    private val codeFenceRegex = Regex("```[a-zA-Z]*\\s*", RegexOption.MULTILINE)
+
     /**
      * 从 AI 返回内容中鲁棒地解析 JSON 数组。
      * 处理：代码块标记、前后多余文本、对象包装（如 {"result":[...]}）。
      */
     private fun parseJsonArraySafely(content: String): JSONArray? {
-        var cleaned = content.trim()
-        // 去除代码块标记
-        cleaned = cleaned
-            .removePrefix("```json")
-            .removePrefix("```")
-            .removeSuffix("```")
-            .trim()
+        // 用正则移除所有代码块标记（含 ```json、``` 等），比 removePrefix 更鲁棒
+        var cleaned = codeFenceRegex.replace(content, "").trim()
 
         // 尝试直接解析为数组
         try {

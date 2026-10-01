@@ -198,6 +198,10 @@ class MainActivity : AppCompatActivity() {
         } else {
             getString(R.string.status_denied)
         }
-        tvServiceStatus.text = getString(R.string.service_stopped)
+        tvServiceStatus.text = if (prefsManager.isServiceRunning()) {
+            getString(R.string.service_running)
+        } else {
+            getString(R.string.service_stopped)
+        }
     }
 }
