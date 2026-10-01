@@ -1,0 +1,363 @@
+好 —— 下面我把必须要做的改动、每处改动的具体代码片段（可直接粘贴）、为什么要改、如何验证、以及配套的 Git/PR 流程和测试建议都列清楚。你不需要我替你提交；按下面步骤在你本地或 CI 上操作即可。
+
+我把改动分成“紧急/高优先”（务必先做）和“中等/可选”两组，先做紧急项可以显著提高稳定性与用户体验。
+
+紧急 / 高优先改动
+1) 保存与使用 MediaProjection 授权：不要只靠 companion object 的静态 pendingData/pendingResultCode
+- 问题：静态变量在进程被回收后会丢失，Service 可能无法初始化 captureManager，从而失效。
+- 修法要点：
+  - 在启动 Service 时把 resultCode 和 resultData 放到 startIntent 的 extras 里（Intent 可以把另一个 Intent 作为 Parcelable）。在 Service.onStartCommand 中读取并立即 setUp captureManager。
+  - 保留 companion 变量作为备用，但不要依赖它作为唯一来源。若无法从 Intent 恢复，立即通知用户并 stopSelf()。
+- 修改示例（FloatingWindowService.kt）：
+  - 在 companion.start 改为：
+    ```kotlin
+    fun start(context: Context, resultCode: Int, data: Intent) {
+        val intent = Intent(context, FloatingWindowService::class.java).apply {
+            putExtra("pendingResultCode", resultCode)
+            putExtra("pendingData", data)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+    ```
+  - 在 Service.onStartCommand 中新增初始化：
+    ```kotlin
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 尝试从 Intent 恢复授权数据
+        intent?.let {
+            val rc = it.getIntExtra("pendingResultCode", 0)
+            val data = it.getParcelableExtra<Intent>("pendingData")
+            if (data != null && rc != 0) {
+                pendingResultCode = rc
+                pendingData = data
+                try {
+                    captureManager.setUp(rc, data)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(this, "截屏初始化失败", Toast.LENGTH_SHORT).show()
+                    stopSelf()
+                }
+            }
+        }
+        return START_STICKY
+    }
+    ```
+  - 在 onCreate 中仍可尝试用 companion 的 pendingData（兼容旧逻辑），但不要仅靠它。
+
+- 验证：
+  1. 在 Activity 授权并调用 FloatingWindowService.start(...) 启动服务，确认服务能立即 setUp（日志/Toast）。
+  2. 强制杀掉应用进程，再从 launcher 启动 Activity 并重新启动服务，确保服务不会因为丢失静态变量而静默失败（若数据缺失会提示并退出）。
+
+2) 正确保存并取消持续翻译的 coroutine（continuousJob）
+- 问题：startContinuousLoop 启动的协程未赋给 continuousJob，无法 cancel 并等待结束，导致内存/线程泄漏或服务不能正确停止持续任务。
+- 修法要点：
+  - 保存 Job 引用： continuousJob = serviceScope.launch { ... }。
+  - 在停止时调用 continuousJob?.cancel() 并将 continuousJob = null。
+  - 在 onDestroy / toggle 中确保 cancel。
+- 修改示例（FloatingWindowService.kt）：
+  ```kotlin
+  private fun startContinuousLoop() {
+      continuousJob = serviceScope.launch {
+          while (isContinuousMode) {
+              try {
+                  translateOnceSuspend()
+              } catch (e: Exception) {
+                  e.printStackTrace()
+              }
+              if (!isContinuousMode) break
+              // 等待间隔（保留原有 delay 分段以响应快速停止）
+              val endTime = System.currentTimeMillis() + CONTINUOUS_INTERVAL_MS
+              while (isActive && isContinuousMode && System.currentTimeMillis() < endTime) {
+                  kotlinx.coroutines.delay(200)
+              }
+          }
+      }
+  }
+
+  private fun toggleContinuousTranslate() {
+      if (isContinuousMode) {
+          isContinuousMode = false
+          continuousJob?.cancel()
+          continuousJob = null
+          overlayManager.clear()
+          Toast.makeText(this, R.string.continuous_off, Toast.LENGTH_SHORT).show()
+      } else {
+          isContinuousMode = true
+          Toast.makeText(this, R.string.continuous_on, Toast.LENGTH_SHORT).show()
+          startContinuousLoop()
+      }
+  }
+
+  override fun onDestroy() {
+      ...
+      isContinuousMode = false
+      continuousJob?.cancel()
+      continuousJob = null
+      ...
+  }
+  ```
+- 验证：
+  1. 启动持续模式后查看进程/线程活动（CPU 用量），再停止，确保循环立即退出且没有残留任务。
+  2. 在持续运行期间强制 Pause/Resume/rotate，确保没有崩溃。
+
+3) ScreenCaptureManager.capture：确保 ByteBuffer 读取正确并防护 pixelStride 为 0 等异常
+- 问题：buffer 未 rewind / position 可能导致 copyPixelsFromBuffer 读到错误数据；pixelStride 为 0 会导致除以 0 或异常宽度计算。
+- 修法要点：
+  - 读取 buffer 前调用 buffer.rewind() 或 buffer.position(0)。
+  - 检查 planes[0].pixelStride > 0；若 <= 0，记录并返回 null。
+  - 捕获并记录更多上下文（pixelStride、rowStride、rowPadding）以便诊断。
+- 修改示例（ScreenCaptureManager.kt）：
+  ```kotlin
+  val planes = image.planes
+  val buffer: ByteBuffer = planes[0].buffer
+  val pixelStride = planes[0].pixelStride
+  val rowStride = planes[0].rowStride
+  val rowPadding = rowStride - pixelStride * screenWidth
+
+  if (pixelStride <= 0) {
+      // 不合理，记录并返回
+      // Log.w(TAG, "pixelStride <= 0: $pixelStride, rowStride=$rowStride")
+      return@withContext null
+  }
+
+  buffer.rewind() // 确保从头读
+
+  val bitmapWidth = screenWidth + rowPadding / pixelStride
+  val bitmap = Bitmap.createBitmap(
+      bitmapWidth,
+      screenHeight,
+      Bitmap.Config.ARGB_8888
+  )
+  try {
+      bitmap.copyPixelsFromBuffer(buffer)
+  } catch (e: Exception) {
+      e.printStackTrace()
+      bitmap.recycle()
+      return@withContext null
+  }
+  ```
+- 验证：
+  1. 在多个不同分辨率及设备上做截屏，核对返回 Bitmap 大小正确且未抛异常。
+  2. 人为模拟 pixelStride 异常（如果可能），确保函数返回 null 而不是崩溃。
+
+4) TranslationManager：区分 4xx（fatal）与 5xx（retryable）并更鲁棒地解析 AI 返回
+- 问题：4xx 返回被当作“成功但返回空列表”，上层会用空字符串覆盖原文，导致 UX 很差；parseJsonArraySafely 对 code fence 的去除不够健壮。
+- 修法要点：
+  - 在 tryTranslate 中对 response.code 做分类：5xx 返回 null（触发重试），4xx 抛出自定义异常（ApiException）或以特殊返回值传回上层，由上层（FloatingWindowService）显示“API Key/URL 无效”的提示并停止重试。
+  - 在 parseJsonArraySafely 里先用正则移除所有 ```...``` code fence（支持多行），再尝试解析；如果仍解析失败，把原始 content 写入日志便于诊断。
+- 示例：在 TranslationManager.kt 中新增 ApiException 类并修改 tryTranslate：
+  ```kotlin
+  class ApiException(val code: Int, message: String?): Exception("API error $code: $message")
+
+  private fun tryTranslate(
+      config: AppConfig,
+      requestBody: String,
+      expectedSize: Int
+  ): List<String>? {
+      val request = Request.Builder()
+          .url(config.apiUrl)
+          .addHeader("Authorization", "Bearer ${config.apiKey}")
+          .addHeader("Content-Type", "application/json")
+          .post(requestBody.toRequestBody(jsonMediaType))
+          .build()
+
+      try {
+          client.newCall(request).execute().use { response ->
+              val body = response.body?.string() ?: ""
+              if (response.code in 500..599) {
+                  // retryable
+                  return null
+              }
+              if (!response.isSuccessful) {
+                  // 4xx -> fatal: throw to caller so they can show a user-visible message
+                  throw ApiException(response.code, body)
+              }
+              // parse as before...
+          }
+      } catch (e: java.net.SocketTimeoutException) {
+          return null
+      } catch (e: java.io.IOException) {
+          return null
+      }
+  }
+  ```
+  - 在 parseJsonArraySafely 开头加上：
+  ```kotlin
+  // 去除所有 code fence (``` ... ```)
+  cleaned = Regex("(?s)```.*?```").replace(cleaned, "").trim()
+  ```
+  - 在调用 translate(...) 的地方（FloatingWindowService.translateOnceSuspend）捕获 ApiException：
+  ```kotlin
+  val translatedList = try {
+      translationManager.translate(srcTexts, config, termContext)
+  } catch (e: ApiException) {
+      // 向用户提示认证或配置错误，回退为显示原文
+      showToast("翻译服务返回错误: ${e.code}. 请检查 API Key/URL")
+      overlayManager.showTranslations(blocks, blocks.map { it.text })
+      return
+  }
+  ```
+- 验证：
+  1. 用一个无效的 apiKey 或错误的 apiUrl 模拟 401/404，确认会看到友好提示且不会用空字符串覆盖原文。
+  2. 用模拟 5xx 响应确认有重试（2 次），最终失败回退为空列表（或按上层策略处理）。
+
+中等 / 可选改动（提高鲁棒与体验）
+5) OcrManager：限制旧 OCR 回调污染（采用 request id drop-old 策略）
+- 问题：ML Kit 的任务无法真正 cancel；并行识别若出现慢任务，老结果可能覆盖新结果。
+- 修法要点：
+  - 在 OcrManager 内维护请求序号 requestCounter，每次 recognize() 发起识别前 ++requestCounter 并把该序号带入各个 runRecognizer 的回调；回调时只在序号仍然是最新时 resume。
+- 示例（简要）：
+  ```kotlin
+  private var requestCounter = 0
+
+  suspend fun recognize(bitmap: Bitmap): List<TextBlock> = coroutineScope {
+      val myRequest = synchronized(this) { ++requestCounter }
+      val image = InputImage.fromBitmap(bitmap, 0)
+      val latinDeferred = async { runRecognizer(latinRecognizer, image, Script.LATIN, myRequest) }
+      ...
+  }
+
+  private suspend fun runRecognizer(..., requestId: Int): List<TaggedBlock> {
+      return suspendCancellableCoroutine { cont ->
+          val task = recognizer.process(image)
+          task.addOnSuccessListener { visionText ->
+              if (!cont.isActive) return@addOnSuccessListener
+              // 检查请求 ID 是否仍有效
+              if (requestId != requestCounter) {
+                  // 旧任务，忽略结果
+                  return@addOnSuccessListener
+              }
+              // 处理并 resume
+          }.addOnFailureListener { e -> ... }
+      }
+  }
+  ```
+- 验证：
+  - 在连续截屏并快速触发多次识别时，确认只有最新一次的识别结果被使用（用日志打印 requestId）。
+
+6) containsChinese 改进（字符分类更完备）
+- 问题：原函数只检查 0x4E00..0x9FFF，漏掉 CJK 扩展、兼容性汉字等。
+- 建议改用 Unicode 脚本判断或正则：
+  ```kotlin
+  private fun containsChinese(text: String): Boolean {
+      return Regex("""\p{IsHan}""").containsMatchIn(text)
+  }
+  ```
+- 验证：用包含扩展汉字、繁体字的样本测试。
+
+7) OverlayManager：改进字号估算与边界处理
+- 问题：在极端倾斜或窄长区域，字号可能太小或被屏幕裁剪。
+- 建议：
+  - 使用 scaledDensity 基于 sp 最小值：val minPx = 12f * context.resources.displayMetrics.scaledDensity
+  - 把 fontSizePx = fontSizePx.coerceIn(minPx, maxPx)
+  - 在计算 params.x/ y 之前做边界修正（确保 x>=0, x + w <= screenWidth）；你需要 screen width/height（可从 WindowManager 获取）。
+- 示例片段：
+  ```kotlin
+  val metrics = context.resources.displayMetrics
+  val minPx = 12f * metrics.scaledDensity
+  val maxPx = 80f * metrics.scaledDensity
+  val fontSizePx = ((actualHeight * 0.85f).coerceIn(minPx, maxPx))
+  setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSizePx)
+  ```
+- 验证：在不同 density 的设备及不同旋转角度测试覆盖层显示是否可读且未越界。
+
+8) MainActivity：显示更准确的服务/权限状态
+- 问题：tvServiceStatus 总是显示 service_stopped；hasCapturePermission 仅看内存 Intent。
+- 建议：
+  - Service 启动时写入 SharedPreferences 的标志（例如 PREF_FLOATING_SERVICE_RUNNING = true），销毁时写 false。MainActivity.read 这个标志更新 UI（不是 100% 准确但比固定文本好）。
+  - 在 Activity 的 capture 权限说明中明确写出“MediaProjection 授权在进程重启后需要重新申请”并提供示例引导。
+- 代码片段（在 Service.onCreate/onDestroy）：
+  ```kotlin
+  private fun setServiceRunningFlag(running: Boolean) {
+      val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+      prefs.edit().putBoolean("floating_service_running", running).apply()
+  }
+  override fun onCreate() {
+      ...
+      setServiceRunningFlag(true)
+  }
+  override fun onDestroy() {
+      setServiceRunningFlag(false)
+      ...
+  }
+  ```
+  - MainActivity.updateStatus 改为：
+  ```kotlin
+  private fun updateStatus() {
+      ...
+      val running = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+          .getBoolean("floating_service_running", false)
+      tvServiceStatus.text = if (running) getString(R.string.service_running) else getString(R.string.service_stopped)
+  }
+  ```
+- 验证：启动/停止服务后 UI 状态应跟随变化。
+
+仓库卫生（必须做 / 建议）
+9) 从仓库移除大文件（ScreenTranslate-debug.apk）并添加 .gitignore
+- 问题：二进制大文件会显著膨胀仓库，影响 clone/CI。
+- 建议流程（注意：会重写历史，需团队同意）：
+  - 局部简单方案（不重写历史）：把 APK 移到 Release（或外部存储），在仓库里删除该文件并提交（这样历史仍存在，但后续 clone 时仍会下载历史中有大文件的副本）。如果历史大小已可接受，这步足够。
+  - 若需彻底清除历史：使用 git filter-repo（推荐）或 BFG：
+    ```bash
+    # 备份当前仓库（非常重要）
+    git clone --mirror git@github.com:Zhonz/Translater.git Translater-mirror
+    cd Translater-mirror
+    # 使用 BFG 删除大文件（举例）
+    bfg --delete-files ScreenTranslate-debug.apk
+    # 或用 filter-repo 删除路径
+    git filter-repo --invert-paths --path ScreenTranslate-debug.apk
+    # 强推到远程（需要强制重写历史，所有合作者需重新 clone）
+    git push --force
+    ```
+  - 在项目根添加 .gitignore（Android 模板）：
+    ```
+    # Android / Java
+    *.apk
+    *.aar
+    /build/
+    /app/build/
+    .gradle/
+    local.properties
+    .idea/
+    *.iml
+    .cxx/
+    ```
+- 验证：
+  - 普通删除：删除文件并 push 后，确认 repo 大小降低（但历史仍含文件）。
+  - filter-repo/BFG：强推后所有合作者需要 reclone；确认 `git log --stat --all` 不再显示该文件。
+
+测试与验证（建议）
+- 单元测试
+  - TranslationManager.parseJsonArraySafely：写 JUnit 测试覆盖多种 AI 输出样例（纯数组、含 ```json``` code fence、有注释+数组、嵌套对象等）。
+  - OcrManager.mergeBlocks/detectScript：构造几组 TaggedBlock 测试合并策略（IoU 边界 case）。
+- 手动验收
+  - 权限与恢复：重启应用、重启设备、重新授权，验证 Service 能正确使用 MediaProjection。
+  - 持续翻译启动/停止：启动持续模式、切换 APP、停止服务，观察是否有残留资源或崩溃。
+  - 失败处理：配置错误 API Key，确认出现友好错误提示且不会把原文替换为空白。
+- CI
+  - 新增一个 GitHub Actions 检查：kotlin 编译（./gradlew assembleDebug）和单元测试（./gradlew test），在 PR 上自动运行。
+
+提交 / PR 建议（例）
+- 分支名：fix/robustness-screen-capture-translation （你本地按需）
+- 提交拆分（每项一条 commit）
+  1. feat: pass MediaProjection intent extras to FloatingWindowService and initialize in onStartCommand
+  2. fix: save continuous translation Job and cancel it on stop/destroy
+  3. fix: rewind ByteBuffer and guard pixelStride in ScreenCaptureManager.capture
+  4. fix: throw ApiException on 4xx and improve parseJsonArraySafely code fence removal
+  5. refactor: add request id to OCR to discard outdated results
+  6. chore: add .gitignore (Android) and document APK removal plan in README
+- PR 描述要点：
+  - 列出问题（为什么会崩溃或出现糟糕 UX），改动摘要（文件列表与关键代码行），如何测试（手动步骤与单元测试），以及是否会有向后不兼容（例如历史重写的说明）。
+- 合并策略：
+  - 如果不做历史重写：合并到 trae/agent-cRiMSO 并在 README 中说明后续计划把可运行代码合并到 main。
+  - 若要清理历史：单独开 PR 讨论并在团队确认后进行 filter-repo 操作（这是破坏性操作，需要所有人配合）。
+
+小贴士与注意事项
+- MediaProjection Intent 是 Parcelable，可以作为 extra 传递，但注意不同 Android 版本行为可能不同；务必在设备上实际测试。
+- ML Kit 的 API 版本差异：使用 line.angle 前确认 SDK 是否支持该字段（否则使用 cornerPoints 计算角度）。
+- 保存 API Key：强烈建议使用 EncryptedSharedPreferences（AndroidX Security）或 Keystore，不要把明文 Key 提示给日志。
+
+如果你愿意，我可以把上面每个改动整理成具体的补丁片段（完整的 diff 风格），或把每条改动做成 checklist（带行号引用）便于你在 IDE 中逐一替换；你要哪种形式？另外，是否需要我把用于单元测试的具体测试用例也写出来（JUnit/Kotlin 测试代码）？

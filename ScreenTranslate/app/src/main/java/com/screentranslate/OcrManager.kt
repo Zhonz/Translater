@@ -12,6 +12,7 @@ import com.screentranslate.model.TextBlock
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -39,26 +40,39 @@ class OcrManager {
     private data class TaggedBlock(val block: TextBlock, val source: Script)
 
     /**
+     * OCR 请求序号。ML Kit 的 process Task 不可取消，
+     * 当多次 recognize 并发时，旧任务的回调可能覆盖新结果。
+     * 通过递增序号，回调时仅接受最新序号的结果。
+     */
+    private val requestCounter = AtomicInteger(0)
+
+    /**
      * 识别 bitmap 中的文字（多语言）。
      * @return 识别出的文字块列表（按从上到下排序），每个块含位置与旋转角度
      */
     suspend fun recognize(bitmap: Bitmap): List<TextBlock> = coroutineScope {
+        val myRequestId = requestCounter.incrementAndGet()
         val image = InputImage.fromBitmap(bitmap, 0)
 
         // 并行运行三个识别器
         val latinDeferred = async {
-            runRecognizer(latinRecognizer, image, Script.LATIN)
+            runRecognizer(latinRecognizer, image, Script.LATIN, myRequestId)
         }
         val koreanDeferred = async {
-            runRecognizer(koreanRecognizer, image, Script.KOREAN)
+            runRecognizer(koreanRecognizer, image, Script.KOREAN, myRequestId)
         }
         val japaneseDeferred = async {
-            runRecognizer(japaneseRecognizer, image, Script.JAPANESE)
+            runRecognizer(japaneseRecognizer, image, Script.JAPANESE, myRequestId)
         }
 
         val latinBlocks = latinDeferred.await()
         val koreanBlocks = koreanDeferred.await()
         val japaneseBlocks = japaneseDeferred.await()
+
+        // 若在识别期间有新请求发起，丢弃本次旧结果，避免覆盖最新识别
+        if (myRequestId != requestCounter.get()) {
+            return@coroutineScope emptyList()
+        }
 
         // 合并去重
         val merged = mergeBlocks(latinBlocks, koreanBlocks, japaneseBlocks)
@@ -69,18 +83,26 @@ class OcrManager {
     /**
      * 运行单个识别器，将结果转为带来源标签的 TextBlock 列表。
      * 协程取消时会同步取消 ML Kit Task，避免资源泄漏。
+     * @param requestId 本次识别的请求序号，回调时若已不是最新序号则丢弃结果。
      */
     private suspend fun runRecognizer(
         recognizer: TextRecognizer,
         image: InputImage,
-        source: Script
+        source: Script,
+        requestId: Int
     ): List<TaggedBlock> {
         return suspendCancellableCoroutine { cont ->
             // ML Kit v16 的 TextRecognizer.process 不支持 CancellationToken，
-            // 因此协程取消时任务仍会执行完毕，但通过 isActive 检查避免恢复已取消的协程。
+            // 因此协程取消时任务仍会执行完毕，但通过 isActive + requestId 检查
+            // 避免恢复已取消的协程或用旧结果覆盖新结果。
             val task = recognizer.process(image)
             task.addOnSuccessListener { visionText ->
                 if (!cont.isActive) return@addOnSuccessListener
+                // 请求已过期（有新的 recognize 调用），丢弃本次结果
+                if (requestId != requestCounter.get()) {
+                    cont.resume(emptyList())
+                    return@addOnSuccessListener
+                }
                 val blocks = mutableListOf<TaggedBlock>()
                 for (block in visionText.textBlocks) {
                     for (line in block.lines) {
@@ -102,7 +124,13 @@ class OcrManager {
                 }
                 cont.resume(blocks)
             }.addOnFailureListener { e ->
-                if (cont.isActive) cont.resumeWithException(e)
+                if (!cont.isActive) return@addOnFailureListener
+                // 请求过期时静默返回空，避免异常传播到已过期的调用
+                if (requestId != requestCounter.get()) {
+                    cont.resume(emptyList())
+                } else {
+                    cont.resumeWithException(e)
+                }
             }
         }
     }

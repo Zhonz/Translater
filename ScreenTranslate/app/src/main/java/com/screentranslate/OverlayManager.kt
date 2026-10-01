@@ -87,7 +87,13 @@ class OverlayManager(private val context: Context) {
             gravity = Gravity.CENTER
             setPadding(pad, 0, pad, 0)
             // 根据原文字高度估算字号（px 单位），倾斜文字用校正后的高度。
-            val fontSizePx = (actualHeight * 0.85f).coerceIn(8f, 80f)
+            // 最小/最大值基于 density * fontScale，尊重系统字体缩放设置，避免在高 dpi 或大字模式下不可读。
+            val metrics = context.resources.displayMetrics
+            val fontScale = context.resources.configuration.fontScale
+            val scaledDensity = metrics.density * fontScale
+            val minPx = 12f * scaledDensity
+            val maxPx = 80f * scaledDensity
+            val fontSizePx = (actualHeight * 0.85f).coerceIn(minPx, maxPx)
             setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSizePx)
             typeface = Typeface.DEFAULT
             maxLines = 1
