@@ -26,18 +26,23 @@ import kotlin.coroutines.resumeWithException
  */
 class OcrManager {
 
-    private val latinRecognizer: TextRecognizer =
+    // 懒加载识别器：仅在首次 recognize() 时初始化，
+    // 这样单元测试可直接实例化 OcrManager 测试纯逻辑方法而不触发 ML Kit 初始化。
+    private val latinRecognizer: TextRecognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private val koreanRecognizer: TextRecognizer =
+    }
+    private val koreanRecognizer: TextRecognizer by lazy {
         TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
-    private val japaneseRecognizer: TextRecognizer =
+    }
+    private val japaneseRecognizer: TextRecognizer by lazy {
         TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+    }
 
     /** 识别器对应的文字脚本标签，用于合并时择优 */
-    private enum class Script { LATIN, KOREAN, JAPANESE }
+    internal enum class Script { LATIN, KOREAN, JAPANESE }
 
     /** 内部带来源标签的识别块 */
-    private data class TaggedBlock(val block: TextBlock, val source: Script)
+    internal data class TaggedBlock(val block: TextBlock, val source: Script)
 
     /**
      * OCR 请求序号。ML Kit 的 process Task 不可取消，
@@ -142,7 +147,7 @@ class OcrManager {
      * 1. 识别结果的文字脚本与来源识别器匹配（如韩文来自韩语识别器）
      * 2. 文字长度较长（更可能识别完整）
      */
-    private fun mergeBlocks(vararg blockLists: List<TaggedBlock>): MutableList<TextBlock> {
+    internal fun mergeBlocks(vararg blockLists: List<TaggedBlock>): MutableList<TextBlock> {
         val all = mutableListOf<TaggedBlock>()
         for (list in blockLists) all.addAll(list)
 
@@ -180,7 +185,7 @@ class OcrManager {
      * 判断 candidate 是否比 current 更适合作为该区域的识别结果。
      * 优先：脚本匹配 > 文字长度。
      */
-    private fun isBetterMatch(candidate: TaggedBlock, current: TaggedBlock): Boolean {
+    internal fun isBetterMatch(candidate: TaggedBlock, current: TaggedBlock): Boolean {
         val candidateScript = detectScript(candidate.block.text)
         val currentScript = detectScript(current.block.text)
 
@@ -198,7 +203,7 @@ class OcrManager {
      * 检测文字的主导脚本（拉丁/韩文/日文/其他）。
      * 用于判断识别结果是否与来源识别器匹配。
      */
-    private fun detectScript(text: String): Script? {
+    internal fun detectScript(text: String): Script? {
         var latin = 0
         var korean = 0
         var japanese = 0
@@ -220,7 +225,7 @@ class OcrManager {
     }
 
     /** 计算两个矩形的交并比 IoU */
-    private fun iou(a: Rect, b: Rect): Float {
+    internal fun iou(a: Rect, b: Rect): Float {
         val interLeft = maxOf(a.left, b.left)
         val interTop = maxOf(a.top, b.top)
         val interRight = minOf(a.right, b.right)

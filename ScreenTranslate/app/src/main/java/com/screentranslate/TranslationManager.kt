@@ -191,7 +191,7 @@ class TranslationManager {
      * 从 AI 返回内容中鲁棒地解析 JSON 数组。
      * 处理：代码块标记、前后多余文本、对象包装（如 {"result":[...]}）。
      */
-    private fun parseJsonArraySafely(content: String): JSONArray? {
+    internal fun parseJsonArraySafely(content: String): JSONArray? {
         // 用正则移除所有代码块标记（含 ```json、``` 等），比 removePrefix 更鲁棒
         var cleaned = codeFenceRegex.replace(content, "").trim()
 
@@ -234,7 +234,7 @@ class TranslationManager {
     }
 
     /** 找到与 start 位置 '[' 匹配的 ']' 的索引 */
-    private fun findMatchingBracket(s: String, start: Int): Int {
+    internal fun findMatchingBracket(s: String, start: Int): Int {
         var depth = 0
         var inString = false
         var escape = false

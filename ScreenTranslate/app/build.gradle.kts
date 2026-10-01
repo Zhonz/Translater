@@ -34,6 +34,20 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+// 为 Robolectric 下载 android-all 依赖配置代理（沙箱环境）
+tasks.withType<Test> {
+    systemProperty("http.proxyHost", "127.0.0.1")
+    systemProperty("http.proxyPort", "18080")
+    systemProperty("https.proxyHost", "127.0.0.1")
+    systemProperty("https.proxyPort", "18080")
 }
 
 dependencies {
@@ -56,4 +70,9 @@ dependencies {
 
     // JSON
     implementation("org.json:json:20231013")
+
+    // 单元测试
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.robolectric:robolectric:4.11.1")
 }
