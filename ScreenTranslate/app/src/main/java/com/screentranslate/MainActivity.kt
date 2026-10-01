@@ -121,10 +121,16 @@ class MainActivity : AppCompatActivity() {
         // 模型下拉适配器（初始为空，检测后填充）
         modelAdapter = ArrayAdapter(
             this,
-            android.R.layout.simple_dropdown_item_1line,
+            android.R.layout.simple_list_item_1,
             mutableListOf()
         )
         etModel.setAdapter(modelAdapter)
+        // threshold=0：获得焦点或调用 showDropDown 时即可展示全部候选项
+        etModel.threshold = 0
+        // 点击候选项后填入文本
+        etModel.setOnItemClickListener { _, _, position, _ ->
+            modelAdapter.getItem(position)?.let { etModel.setText(it, false) }
+        }
     }
 
     /** 初始化服务商下拉选择器 */
@@ -146,7 +152,7 @@ class MainActivity : AppCompatActivity() {
                     etApiUrl.setText(preset.apiUrl)
                 }
                 if (preset.model.isNotBlank()) {
-                    etModel.setText(preset.model)
+                    etModel.setText(preset.model, false)
                 }
                 tvProviderDesc.text = preset.description
             }
@@ -159,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         val config = prefsManager.loadConfig()
         etApiUrl.setText(config.apiUrl)
         etApiKey.setText(config.apiKey)
-        etModel.setText(config.model)
+        etModel.setText(config.model, false)
         etPrompt.setText(config.prompt)
 
         // 根据已保存的 apiUrl 反查并选中对应的服务商
@@ -214,14 +220,16 @@ class MainActivity : AppCompatActivity() {
                 return@launch
             }
 
-            // 填充下拉列表并展开
+            // 填充下拉列表：先清空当前文本，避免 AutoCompleteTextView 按文本过滤导致看不到全部模型
             modelAdapter.clear()
             modelAdapter.addAll(models.sorted())
             modelAdapter.notifyDataSetChanged()
+            etModel.setText("", false)
+            etModel.requestFocus()
             etModel.showDropDown()
             Toast.makeText(
                 this@MainActivity,
-                "已获取 ${models.size} 个可用模型",
+                "已获取 ${models.size} 个可用模型，请选择",
                 Toast.LENGTH_SHORT
             ).show()
         }
