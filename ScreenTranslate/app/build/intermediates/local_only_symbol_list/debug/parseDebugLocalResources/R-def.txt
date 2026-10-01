@@ -35,6 +35,7 @@ id etModel
 id etPrompt
 id ivFloatingButton
 id menuRoot
+id switchPmTerms
 id tvCaptureStatus
 id tvOverlayStatus
 id tvServiceStatus

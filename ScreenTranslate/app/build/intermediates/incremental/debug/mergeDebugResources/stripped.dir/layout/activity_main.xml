@@ -174,6 +174,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/btn_save_config" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchPmTerms"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:checked="true"
+                    android:text="启用边狱巴士/脑叶公司/废墟图书馆术语库"
+                    android:textSize="14sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

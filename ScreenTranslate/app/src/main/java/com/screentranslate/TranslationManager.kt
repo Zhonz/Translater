@@ -32,9 +32,14 @@ class TranslationManager {
      *
      * @param texts 待翻译的文字列表
      * @param config AI 服务商配置
+     * @param termContext 可选的术语上下文（由 TermInjector 生成），会拼入系统提示词
      * @return 翻译后的文字列表（与输入顺序一一对应）；失败时返回空列表
      */
-    suspend fun translate(texts: List<String>, config: AppConfig): List<String> =
+    suspend fun translate(
+        texts: List<String>,
+        config: AppConfig,
+        termContext: String = ""
+    ): List<String> =
         withContext(Dispatchers.IO) {
             if (texts.isEmpty() || config.apiKey.isBlank()) {
                 return@withContext emptyList()
@@ -44,6 +49,10 @@ class TranslationManager {
             val inputArray = JSONArray(texts)
             val systemPrompt = buildString {
                 append(config.prompt)
+                if (termContext.isNotBlank()) {
+                    append("\n\n")
+                    append(termContext)
+                }
                 append("\n\n用户会发送一个 JSON 字符串数组，请将每个元素翻译成简体中文，")
                 append("并仅返回一个 JSON 字符串数组，保持元素数量和顺序与输入完全一致，")
                 append("不要输出任何额外的解释、代码块标记或前后缀文本。")

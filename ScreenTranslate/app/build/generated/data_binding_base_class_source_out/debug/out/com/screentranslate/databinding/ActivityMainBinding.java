@@ -11,6 +11,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.viewbinding.ViewBinding;
 import androidx.viewbinding.ViewBindings;
+import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.google.android.material.textfield.TextInputEditText;
 import com.screentranslate.R;
 import java.lang.NullPointerException;
@@ -49,6 +50,9 @@ public final class ActivityMainBinding implements ViewBinding {
   public final TextInputEditText etPrompt;
 
   @NonNull
+  public final SwitchMaterial switchPmTerms;
+
+  @NonNull
   public final TextView tvCaptureStatus;
 
   @NonNull
@@ -62,8 +66,8 @@ public final class ActivityMainBinding implements ViewBinding {
       @NonNull Button btnStartService, @NonNull Button btnStopService,
       @NonNull TextInputEditText etApiKey, @NonNull TextInputEditText etApiUrl,
       @NonNull TextInputEditText etModel, @NonNull TextInputEditText etPrompt,
-      @NonNull TextView tvCaptureStatus, @NonNull TextView tvOverlayStatus,
-      @NonNull TextView tvServiceStatus) {
+      @NonNull SwitchMaterial switchPmTerms, @NonNull TextView tvCaptureStatus,
+      @NonNull TextView tvOverlayStatus, @NonNull TextView tvServiceStatus) {
     this.rootView = rootView;
     this.btnRequestCapture = btnRequestCapture;
     this.btnRequestOverlay = btnRequestOverlay;
@@ -74,6 +78,7 @@ public final class ActivityMainBinding implements ViewBinding {
     this.etApiUrl = etApiUrl;
     this.etModel = etModel;
     this.etPrompt = etPrompt;
+    this.switchPmTerms = switchPmTerms;
     this.tvCaptureStatus = tvCaptureStatus;
     this.tvOverlayStatus = tvOverlayStatus;
     this.tvServiceStatus = tvServiceStatus;
@@ -160,6 +165,12 @@ public final class ActivityMainBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.switchPmTerms;
+      SwitchMaterial switchPmTerms = ViewBindings.findChildViewById(rootView, id);
+      if (switchPmTerms == null) {
+        break missingId;
+      }
+
       id = R.id.tvCaptureStatus;
       TextView tvCaptureStatus = ViewBindings.findChildViewById(rootView, id);
       if (tvCaptureStatus == null) {
@@ -180,7 +191,7 @@ public final class ActivityMainBinding implements ViewBinding {
 
       return new ActivityMainBinding((ScrollView) rootView, btnRequestCapture, btnRequestOverlay,
           btnSaveConfig, btnStartService, btnStopService, etApiKey, etApiUrl, etModel, etPrompt,
-          tvCaptureStatus, tvOverlayStatus, tvServiceStatus);
+          switchPmTerms, tvCaptureStatus, tvOverlayStatus, tvServiceStatus);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));
