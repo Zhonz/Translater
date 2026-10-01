@@ -1,0 +1,58 @@
+[
+    {
+        "merged": "com.screentranslate.app-debug-33:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.screentranslate.app-main-35:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.screentranslate.app-main-35:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/layout_activity_main.xml.flat",
+        "source": "com.screentranslate.app-main-35:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/drawable_overlay_text_bg.xml.flat",
+        "source": "com.screentranslate.app-main-35:/drawable/overlay_text_bg.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/drawable_floating_button_bg.xml.flat",
+        "source": "com.screentranslate.app-main-35:/drawable/floating_button_bg.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/layout_floating_menu.xml.flat",
+        "source": "com.screentranslate.app-main-35:/layout/floating_menu.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/mipmap_ic_launcher_round.xml.flat",
+        "source": "com.screentranslate.app-main-35:/mipmap/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.screentranslate.app-main-35:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/layout_floating_button.xml.flat",
+        "source": "com.screentranslate.app-main-35:/layout/floating_button.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/drawable_menu_bg.xml.flat",
+        "source": "com.screentranslate.app-main-35:/drawable/menu_bg.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.screentranslate.app-main-35:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/drawable_ic_translate.xml.flat",
+        "source": "com.screentranslate.app-main-35:/drawable/ic_translate.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/mipmap_ic_launcher.xml.flat",
+        "source": "com.screentranslate.app-main-35:/mipmap/ic_launcher.xml"
+    },
+    {
+        "merged": "com.screentranslate.app-debug-33:/drawable_ic_close.xml.flat",
+        "source": "com.screentranslate.app-main-35:/drawable/ic_close.xml"
+    }
+]
