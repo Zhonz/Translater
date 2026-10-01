@@ -51,6 +51,7 @@ class FloatingWindowService : Service() {
     private lateinit var translationManager: TranslationManager
     private lateinit var overlayManager: OverlayManager
     private lateinit var prefsManager: PrefsManager
+    private lateinit var termInjector: TermInjector
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
@@ -101,6 +102,7 @@ class FloatingWindowService : Service() {
         translationManager = TranslationManager()
         overlayManager = OverlayManager(this)
         prefsManager = PrefsManager(this)
+        termInjector = TermInjector(this)
 
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -384,7 +386,14 @@ class FloatingWindowService : Service() {
         }
 
         val config = prefsManager.loadConfig()
-        val translatedList = translationManager.translate(toTranslate.map { it.text }, config)
+        // 构建术语上下文：扫描待翻译文本，注入命中的 Project Moon 术语（可在设置中关闭）
+        val srcTexts = toTranslate.map { it.text }
+        val termContext = if (prefsManager.isProjectMoonTermsEnabled()) {
+            termInjector.buildTermContext(srcTexts)
+        } else {
+            ""
+        }
+        val translatedList = translationManager.translate(srcTexts, config, termContext)
 
         // 组装结果：已中文的保留原文，其余用翻译结果
         val results = MutableList(blocks.size) { "" }

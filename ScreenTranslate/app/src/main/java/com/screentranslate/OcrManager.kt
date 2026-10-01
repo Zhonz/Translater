@@ -13,8 +13,8 @@ import kotlin.coroutines.suspendCoroutine
 /**
  * 基于 ML Kit 的文字识别管理器。
  *
- * 识别屏幕截图中的文字，并返回每个文字块的内容与边界框（屏幕坐标）。
- * 边界框用于在覆盖层中将翻译结果放置在与原文相同的位置。
+ * 识别屏幕截图中的文字，并返回每个文字块的内容、边界框（屏幕坐标）以及旋转角度。
+ * 边界框与角度用于在覆盖层中将翻译结果放置在与原文相同的位置与倾斜角度。
  */
 class OcrManager {
 
@@ -23,7 +23,7 @@ class OcrManager {
 
     /**
      * 识别 bitmap 中的文字。
-     * @return 识别出的文字块列表（按从上到下、从左到右排序）
+     * @return 识别出的文字块列表（按从上到下排序），每个块含位置与旋转角度
      */
     suspend fun recognize(bitmap: Bitmap): List<TextBlock> = suspendCoroutine { cont ->
         val image = InputImage.fromBitmap(bitmap, 0)
@@ -31,14 +31,19 @@ class OcrManager {
             .addOnSuccessListener { visionText ->
                 val blocks = mutableListOf<TextBlock>()
                 for (block in visionText.textBlocks) {
-                    val box = block.boundingBox ?: continue
-                    val text = block.text.trim()
-                    if (text.isNotEmpty()) {
+                    // 按行处理，每行单独作为一个 TextBlock，以获取准确的倾斜角度
+                    for (line in block.lines) {
+                        val box = line.boundingBox ?: continue
+                        val text = line.text.trim()
+                        if (text.isEmpty()) continue
+                        // line.angle 为该行相对于水平的旋转角度（度）
+                        val angle = line.angle
                         blocks.add(
                             TextBlock(
                                 text = text,
                                 boundingBox = Rect(box),
-                                textHeight = box.height()
+                                textHeight = box.height(),
+                                angle = angle
                             )
                         )
                     }

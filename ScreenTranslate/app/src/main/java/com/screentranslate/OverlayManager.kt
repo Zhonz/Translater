@@ -59,6 +59,10 @@ class OverlayManager(private val context: Context) {
             setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSizePx)
             typeface = Typeface.DEFAULT
             maxLines = 1
+            // 匹配原文倾斜角度：以边界框中心为支点旋转
+            pivotX = box.width() / 2f
+            pivotY = box.height() / 2f
+            rotation = -block.angle
         }
 
         val params = WindowManager.LayoutParams(

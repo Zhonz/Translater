@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import com.screentranslate.model.AppConfig
 
 /**
- * 使用 SharedPreferences 持久化应用配置（AI 服务商信息等）。
+ * 使用 SharedPreferences 持久化应用配置（AI 服务商信息、术语注入开关等）。
  */
 class PrefsManager(context: Context) {
 
@@ -24,11 +24,21 @@ class PrefsManager(context: Context) {
 
     fun loadConfig(): AppConfig {
         return AppConfig(
-            apiUrl = prefs.getString(KEY_API_URL, AppConfig.DEFAULT_PROMPT) ?: "https://api.openai.com/v1/chat/completions",
+            apiUrl = prefs.getString(KEY_API_URL, "https://api.openai.com/v1/chat/completions")
+                ?: "https://api.openai.com/v1/chat/completions",
             apiKey = prefs.getString(KEY_API_KEY, "") ?: "",
             model = prefs.getString(KEY_MODEL, "gpt-4o-mini") ?: "gpt-4o-mini",
-            prompt = prefs.getString(KEY_PROMPT, AppConfig.DEFAULT_PROMPT) ?: AppConfig.DEFAULT_PROMPT
+            prompt = prefs.getString(KEY_PROMPT, AppConfig.DEFAULT_PROMPT)
+                ?: AppConfig.DEFAULT_PROMPT
         )
+    }
+
+    /** 是否启用 Project Moon 术语注入（边狱巴士/脑叶公司/废墟图书馆统一译名） */
+    fun isProjectMoonTermsEnabled(): Boolean =
+        prefs.getBoolean(KEY_USE_PM_TERMS, true)
+
+    fun setProjectMoonTermsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_USE_PM_TERMS, enabled).apply()
     }
 
     companion object {
@@ -36,5 +46,6 @@ class PrefsManager(context: Context) {
         private const val KEY_API_KEY = "api_key"
         private const val KEY_MODEL = "model"
         private const val KEY_PROMPT = "prompt"
+        private const val KEY_USE_PM_TERMS = "use_pm_terms"
     }
 }

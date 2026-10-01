@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStartService: Button
     private lateinit var btnStopService: Button
     private lateinit var btnSaveConfig: Button
+    private lateinit var switchPmTerms: com.google.android.material.switchmaterial.SwitchMaterial
     private lateinit var etApiUrl: TextInputEditText
     private lateinit var etApiKey: TextInputEditText
     private lateinit var etModel: TextInputEditText
@@ -71,6 +72,7 @@ class MainActivity : AppCompatActivity() {
         bindViews()
         loadConfigIntoViews()
         setupListeners()
+        setupPmTermsSwitch()
         updateStatus()
     }
 
@@ -83,6 +85,7 @@ class MainActivity : AppCompatActivity() {
         btnStartService = findViewById(R.id.btnStartService)
         btnStopService = findViewById(R.id.btnStopService)
         btnSaveConfig = findViewById(R.id.btnSaveConfig)
+        switchPmTerms = findViewById(R.id.switchPmTerms)
         etApiUrl = findViewById(R.id.etApiUrl)
         etApiKey = findViewById(R.id.etApiKey)
         etModel = findViewById(R.id.etModel)
@@ -150,6 +153,13 @@ class MainActivity : AppCompatActivity() {
         }
         prefsManager.saveConfig(config)
         Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun setupPmTermsSwitch() {
+        switchPmTerms.isChecked = prefsManager.isProjectMoonTermsEnabled()
+        switchPmTerms.setOnCheckedChangeListener { _, isChecked ->
+            prefsManager.setProjectMoonTermsEnabled(isChecked)
+        }
     }
 
     // ==================== 服务 ====================
