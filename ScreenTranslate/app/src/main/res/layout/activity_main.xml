@@ -190,7 +190,15 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="检测"
-                        android:minWidth="80dp" />
+                        android:minWidth="72dp"
+                        android:layout_marginEnd="6dp" />
+
+                    <Button
+                        android:id="@+id/btnHistoryModels"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="历史"
+                        android:minWidth="72dp" />
                 </LinearLayout>
 
                 <com.google.android.material.textfield.TextInputLayout

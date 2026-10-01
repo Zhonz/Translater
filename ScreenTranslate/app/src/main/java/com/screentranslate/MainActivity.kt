@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStopService: Button
     private lateinit var btnSaveConfig: Button
     private lateinit var btnDetectModels: Button
+    private lateinit var btnHistoryModels: Button
     private lateinit var switchPmTerms: com.google.android.material.switchmaterial.SwitchMaterial
     private lateinit var spinnerProvider: Spinner
     private lateinit var tvProviderDesc: TextView
@@ -110,6 +111,7 @@ class MainActivity : AppCompatActivity() {
         btnStopService = findViewById(R.id.btnStopService)
         btnSaveConfig = findViewById(R.id.btnSaveConfig)
         btnDetectModels = findViewById(R.id.btnDetectModels)
+        btnHistoryModels = findViewById(R.id.btnHistoryModels)
         switchPmTerms = findViewById(R.id.switchPmTerms)
         spinnerProvider = findViewById(R.id.spinnerProvider)
         tvProviderDesc = findViewById(R.id.tvProviderDesc)
@@ -186,6 +188,7 @@ class MainActivity : AppCompatActivity() {
         btnStartService.setOnClickListener { startFloatingService() }
         btnStopService.setOnClickListener { stopFloatingService() }
         btnDetectModels.setOnClickListener { detectModels() }
+        btnHistoryModels.setOnClickListener { showHistoryModels() }
     }
 
     // ==================== 模型检测 ====================
@@ -226,9 +229,31 @@ class MainActivity : AppCompatActivity() {
             modelAdapter.addAll(sortedModels)
             modelAdapter.notifyDataSetChanged()
 
+            // 缓存到本地，便于下次通过"历史"按钮直接查看
+            prefsManager.saveDetectedModels(apiUrl, sortedModels)
+
             // 弹出选择对话框，保证用户一定能看到所有模型
             showModelPickerDialog(sortedModels)
         }
+    }
+
+    /** 展示当前服务商上一次检测到的模型列表（无需重新请求接口） */
+    private fun showHistoryModels() {
+        val apiUrl = etApiUrl.text?.toString()?.trim() ?: ""
+        if (apiUrl.isBlank()) {
+            Toast.makeText(this, "请先选择或填写服务商 API 地址", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val cached = prefsManager.loadDetectedModels(apiUrl)
+        if (cached.isEmpty()) {
+            Toast.makeText(this, "暂无缓存模型，请先点击「检测」", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // 同步到 AutoCompleteTextView 候选
+        modelAdapter.clear()
+        modelAdapter.addAll(cached)
+        modelAdapter.notifyDataSetChanged()
+        showModelPickerDialog(cached)
     }
 
     /** 以列表对话框形式展示可用模型，点击后填入模型输入框 */
