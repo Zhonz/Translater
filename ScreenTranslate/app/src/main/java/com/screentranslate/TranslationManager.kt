@@ -116,6 +116,115 @@ class TranslationManager {
         }
 
     /**
+     * 获取服务商可用模型列表。
+     *
+     * 从 chat completions 地址推导出 models 接口地址（将末尾的 /chat/completions 替换为 /models），
+     * 调用 OpenAI 兼容的 GET /models 接口并解析返回的模型 id 列表。
+     *
+     * @param apiUrl chat completions 接口地址
+     * @param apiKey API Key
+     * @return 成功返回模型 id 列表；失败返回空列表，错误信息见 [lastError]
+     */
+    suspend fun fetchModels(apiUrl: String, apiKey: String): List<String> =
+        withContext(Dispatchers.IO) {
+            lastError = null
+            if (apiKey.isBlank()) {
+                lastError = "API Key 未配置"
+                return@withContext emptyList()
+            }
+            val modelsUrl = deriveModelsUrl(apiUrl)
+            if (modelsUrl == null) {
+                lastError = "无法从 API 地址推导出模型列表接口地址"
+                return@withContext emptyList()
+            }
+
+            val request = Request.Builder()
+                .url(modelsUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .get()
+                .build()
+
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        lastError = when (response.code) {
+                            401 -> "API Key 无效或未授权"
+                            403 -> "API Key 无权限"
+                            404 -> "该服务商不支持模型列表接口"
+                            429 -> "请求过于频繁，请稍后再试"
+                            else -> "获取模型列表失败（HTTP ${response.code}）"
+                        }
+                        return@withContext emptyList()
+                    }
+                    val body = response.body?.string() ?: ""
+                    parseModelsResponse(body)
+                }
+            } catch (e: Exception) {
+                lastError = "网络异常：${e.message ?: "未知错误"}"
+                emptyList()
+            }
+        }
+
+    /**
+     * 从 chat completions 地址推导出 models 接口地址。
+     * 例如 https://api.openai.com/v1/chat/completions → https://api.openai.com/v1/models
+     */
+    internal fun deriveModelsUrl(chatUrl: String): String? {
+        return try {
+            val trimmed = chatUrl.trim().trimEnd('/')
+            when {
+                trimmed.endsWith("/chat/completions") ->
+                    trimmed.removeSuffix("/chat/completions") + "/models"
+                trimmed.endsWith("/completions") ->
+                    trimmed.removeSuffix("/completions") + "/models"
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 解析 /models 接口返回的 JSON，提取模型 id 列表。
+     * 兼容 OpenAI 标准格式 {"data":[{"id":"..."},...]} 以及直接数组格式。
+     */
+    internal fun parseModelsResponse(body: String): List<String> {
+        return try {
+            val trimmed = body.trim()
+            when {
+                // OpenAI 标准对象格式：{"data":[{"id":"..."},...]}
+                trimmed.startsWith("{") -> {
+                    val json = JSONObject(trimmed)
+                    val data = json.optJSONArray("data") ?: json.optJSONArray("models")
+                    if (data != null) {
+                        parseModelArray(data)
+                    } else {
+                        emptyList()
+                    }
+                }
+                // 直接数组格式：["model-a","model-b"] 或 [{"id":"..."},...]
+                trimmed.startsWith("[") -> {
+                    parseModelArray(JSONArray(trimmed))
+                }
+                else -> emptyList()
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /** 解析模型数组，元素可能是字符串或带 id 字段的对象 */
+    private fun parseModelArray(arr: JSONArray): List<String> {
+        return (0 until arr.length()).mapNotNull { i ->
+            when (val item = arr.opt(i)) {
+                is String -> item.takeIf { it.isNotBlank() }
+                is JSONObject -> item.optString("id").takeIf { it.isNotBlank() }
+                else -> null
+            }
+        }
+    }
+
+    /**
      * 执行一次翻译请求，成功返回结果列表，瞬时失败返回 null（触发重试）。
      */
     private fun tryTranslate(

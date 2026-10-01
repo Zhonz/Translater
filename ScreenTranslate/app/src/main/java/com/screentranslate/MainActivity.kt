@@ -15,10 +15,16 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputEditText
 import com.screentranslate.model.AppConfig
 import com.screentranslate.model.ProviderPreset
 import com.screentranslate.util.PrefsManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 主界面：权限申请、AI 服务商配置、悬浮窗服务启停。
@@ -26,6 +32,10 @@ import com.screentranslate.util.PrefsManager
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefsManager: PrefsManager
+    private val translationManager = TranslationManager()
+
+    /** 网络请求协程作用域 */
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
 
     private lateinit var tvOverlayStatus: TextView
     private lateinit var tvCaptureStatus: TextView
@@ -35,18 +45,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStartService: Button
     private lateinit var btnStopService: Button
     private lateinit var btnSaveConfig: Button
+    private lateinit var btnDetectModels: Button
     private lateinit var switchPmTerms: com.google.android.material.switchmaterial.SwitchMaterial
     private lateinit var spinnerProvider: Spinner
     private lateinit var tvProviderDesc: TextView
     private lateinit var etApiUrl: TextInputEditText
     private lateinit var etApiKey: TextInputEditText
-    private lateinit var etModel: TextInputEditText
+    private lateinit var etModel: MaterialAutoCompleteTextView
     private lateinit var etPrompt: TextInputEditText
 
     /** 服务商预设列表 */
     private val providers = ProviderPreset.BUILT_IN
     /** 标记是否正在程序化设置 spinner，避免触发回调覆盖用户输入 */
     private var isProgrammaticSelection = false
+    /** 模型下拉适配器 */
+    private lateinit var modelAdapter: ArrayAdapter<String>
 
     // MediaProjection 授权结果
     private var captureResultCode: Int = 0
@@ -96,6 +109,7 @@ class MainActivity : AppCompatActivity() {
         btnStartService = findViewById(R.id.btnStartService)
         btnStopService = findViewById(R.id.btnStopService)
         btnSaveConfig = findViewById(R.id.btnSaveConfig)
+        btnDetectModels = findViewById(R.id.btnDetectModels)
         switchPmTerms = findViewById(R.id.switchPmTerms)
         spinnerProvider = findViewById(R.id.spinnerProvider)
         tvProviderDesc = findViewById(R.id.tvProviderDesc)
@@ -103,6 +117,14 @@ class MainActivity : AppCompatActivity() {
         etApiKey = findViewById(R.id.etApiKey)
         etModel = findViewById(R.id.etModel)
         etPrompt = findViewById(R.id.etPrompt)
+
+        // 模型下拉适配器（初始为空，检测后填充）
+        modelAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_dropdown_item_1line,
+            mutableListOf()
+        )
+        etModel.setAdapter(modelAdapter)
     }
 
     /** 初始化服务商下拉选择器 */
@@ -157,6 +179,52 @@ class MainActivity : AppCompatActivity() {
         btnSaveConfig.setOnClickListener { saveConfig() }
         btnStartService.setOnClickListener { startFloatingService() }
         btnStopService.setOnClickListener { stopFloatingService() }
+        btnDetectModels.setOnClickListener { detectModels() }
+    }
+
+    // ==================== 模型检测 ====================
+
+    /** 调用服务商 /models 接口获取可用模型列表，填充到模型下拉框 */
+    private fun detectModels() {
+        val apiUrl = etApiUrl.text?.toString()?.trim() ?: ""
+        val apiKey = etApiKey.text?.toString()?.trim() ?: ""
+
+        if (apiUrl.isBlank()) {
+            Toast.makeText(this, "请先填写 API 地址", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (apiKey.isBlank()) {
+            Toast.makeText(this, "请先填写 API Key", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        btnDetectModels.isEnabled = false
+        btnDetectModels.text = "检测中..."
+
+        scope.launch {
+            val models = withContext(Dispatchers.IO) {
+                translationManager.fetchModels(apiUrl, apiKey)
+            }
+            btnDetectModels.isEnabled = true
+            btnDetectModels.text = "检测"
+
+            if (models.isEmpty()) {
+                val error = translationManager.lastError ?: "未获取到模型列表"
+                Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            // 填充下拉列表并展开
+            modelAdapter.clear()
+            modelAdapter.addAll(models.sorted())
+            modelAdapter.notifyDataSetChanged()
+            etModel.showDropDown()
+            Toast.makeText(
+                this@MainActivity,
+                "已获取 ${models.size} 个可用模型",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     // ==================== 权限 ====================
@@ -259,5 +327,11 @@ class MainActivity : AppCompatActivity() {
         } else {
             getString(R.string.service_stopped)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        scope.coroutineContext[Job]?.cancel()
+        translationManager.close()
     }
 }

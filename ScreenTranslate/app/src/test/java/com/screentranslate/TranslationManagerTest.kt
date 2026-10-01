@@ -120,4 +120,68 @@ class TranslationManagerTest {
         val idx = manager.findMatchingBracket(s, 0)
         assertEquals(s.length - 1, idx)
     }
+
+    // ==================== deriveModelsUrl ====================
+
+    @Test
+    fun `deriveModelsUrl replaces chat completions with models`() {
+        assertEquals(
+            "https://api.openai.com/v1/models",
+            manager.deriveModelsUrl("https://api.openai.com/v1/chat/completions")
+        )
+    }
+
+    @Test
+    fun `deriveModelsUrl handles trailing slash`() {
+        assertEquals(
+            "https://api.deepseek.com/v1/models",
+            manager.deriveModelsUrl("https://api.deepseek.com/v1/chat/completions/")
+        )
+    }
+
+    @Test
+    fun `deriveModelsUrl handles completions suffix`() {
+        assertEquals(
+            "https://example.com/v1/models",
+            manager.deriveModelsUrl("https://example.com/v1/completions")
+        )
+    }
+
+    @Test
+    fun `deriveModelsUrl returns null for non matching url`() {
+        assertNull(manager.deriveModelsUrl("https://example.com/v1/embeddings"))
+        assertNull(manager.deriveModelsUrl(""))
+    }
+
+    // ==================== parseModelsResponse ====================
+
+    @Test
+    fun `parseModelsResponse parses openai standard format`() {
+        val body = """{"data":[{"id":"gpt-4o-mini"},{"id":"gpt-4o"}]}"""
+        assertEquals(listOf("gpt-4o-mini", "gpt-4o"), manager.parseModelsResponse(body))
+    }
+
+    @Test
+    fun `parseModelsResponse parses direct array format`() {
+        val body = """["gpt-4o-mini","gpt-4o"]"""
+        assertEquals(listOf("gpt-4o-mini", "gpt-4o"), manager.parseModelsResponse(body))
+    }
+
+    @Test
+    fun `parseModelsResponse parses objects array format`() {
+        val body = """[{"id":"model-a"},{"id":"model-b"}]"""
+        assertEquals(listOf("model-a", "model-b"), manager.parseModelsResponse(body))
+    }
+
+    @Test
+    fun `parseModelsResponse skips empty ids`() {
+        val body = """{"data":[{"id":"gpt-4o"},{"id":""},{"id":"  "}]}"""
+        assertEquals(listOf("gpt-4o"), manager.parseModelsResponse(body))
+    }
+
+    @Test
+    fun `parseModelsResponse returns empty for invalid json`() {
+        assertEquals(emptyList<String>(), manager.parseModelsResponse("not json"))
+        assertEquals(emptyList<String>(), manager.parseModelsResponse(""))
+    }
 }
