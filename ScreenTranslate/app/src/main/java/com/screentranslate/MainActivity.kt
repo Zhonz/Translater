@@ -8,13 +8,16 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.textfield.TextInputEditText
 import com.screentranslate.model.AppConfig
+import com.screentranslate.model.ProviderPreset
 import com.screentranslate.util.PrefsManager
 
 /**
@@ -33,10 +36,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnStopService: Button
     private lateinit var btnSaveConfig: Button
     private lateinit var switchPmTerms: com.google.android.material.switchmaterial.SwitchMaterial
+    private lateinit var spinnerProvider: Spinner
+    private lateinit var tvProviderDesc: TextView
     private lateinit var etApiUrl: TextInputEditText
     private lateinit var etApiKey: TextInputEditText
     private lateinit var etModel: TextInputEditText
     private lateinit var etPrompt: TextInputEditText
+
+    /** 服务商预设列表 */
+    private val providers = ProviderPreset.BUILT_IN
+    /** 标记是否正在程序化设置 spinner，避免触发回调覆盖用户输入 */
+    private var isProgrammaticSelection = false
 
     // MediaProjection 授权结果
     private var captureResultCode: Int = 0
@@ -70,6 +80,7 @@ class MainActivity : AppCompatActivity() {
         prefsManager = PrefsManager(this)
 
         bindViews()
+        setupProviderSpinner()
         loadConfigIntoViews()
         setupListeners()
         setupPmTermsSwitch()
@@ -86,10 +97,40 @@ class MainActivity : AppCompatActivity() {
         btnStopService = findViewById(R.id.btnStopService)
         btnSaveConfig = findViewById(R.id.btnSaveConfig)
         switchPmTerms = findViewById(R.id.switchPmTerms)
+        spinnerProvider = findViewById(R.id.spinnerProvider)
+        tvProviderDesc = findViewById(R.id.tvProviderDesc)
         etApiUrl = findViewById(R.id.etApiUrl)
         etApiKey = findViewById(R.id.etApiKey)
         etModel = findViewById(R.id.etModel)
         etPrompt = findViewById(R.id.etPrompt)
+    }
+
+    /** 初始化服务商下拉选择器 */
+    private fun setupProviderSpinner() {
+        val adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            providers.map { it.name }
+        )
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerProvider.adapter = adapter
+
+        spinnerProvider.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                if (isProgrammaticSelection) return
+                val preset = providers[position]
+                // 自动填入 API 地址和模型（自定义选项不覆盖）
+                if (preset.apiUrl.isNotBlank()) {
+                    etApiUrl.setText(preset.apiUrl)
+                }
+                if (preset.model.isNotBlank()) {
+                    etModel.setText(preset.model)
+                }
+                tvProviderDesc.text = preset.description
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
     }
 
     private fun loadConfigIntoViews() {
@@ -98,6 +139,16 @@ class MainActivity : AppCompatActivity() {
         etApiKey.setText(config.apiKey)
         etModel.setText(config.model)
         etPrompt.setText(config.prompt)
+
+        // 根据已保存的 apiUrl 反查并选中对应的服务商
+        val preset = ProviderPreset.findByApiUrl(config.apiUrl)
+        val index = providers.indexOfFirst { it.name == preset.name }
+        if (index >= 0) {
+            isProgrammaticSelection = true
+            spinnerProvider.setSelection(index)
+            isProgrammaticSelection = false
+        }
+        tvProviderDesc.text = preset.description
     }
 
     private fun setupListeners() {
