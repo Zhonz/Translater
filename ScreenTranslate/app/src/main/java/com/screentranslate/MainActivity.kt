@@ -98,6 +98,7 @@ class MainActivity : AppCompatActivity() {
         loadConfigIntoViews()
         setupListeners()
         setupPmTermsSwitch()
+        setupTermManagement()
         updateStatus()
     }
 
@@ -327,6 +328,12 @@ class MainActivity : AppCompatActivity() {
         switchPmTerms.isChecked = prefsManager.isProjectMoonTermsEnabled()
         switchPmTerms.setOnCheckedChangeListener { _, isChecked ->
             prefsManager.setProjectMoonTermsEnabled(isChecked)
+        }
+    }
+
+    private fun setupTermManagement() {
+        findViewById<Button>(R.id.btnManageTerms).setOnClickListener {
+            startActivity(Intent(this, TermManagementActivity::class.java))
         }
     }
 

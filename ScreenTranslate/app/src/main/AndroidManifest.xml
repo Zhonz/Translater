@@ -30,6 +30,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".TermManagementActivity"
+            android:exported="false"
+            android:label="术语库管理" />
+
         <service
             android:name=".FloatingWindowService"
             android:exported="false"

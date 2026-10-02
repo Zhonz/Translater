@@ -229,6 +229,14 @@
                     android:checked="true"
                     android:text="启用边狱巴士/脑叶公司/废墟图书馆术语库"
                     android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnManageTerms"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="术语库管理（添加/导入/导出）"
+                    android:textSize="13sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
